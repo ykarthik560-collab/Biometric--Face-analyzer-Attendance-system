@@ -1,0 +1,429 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Scanner Station — Attendance</title>
+<style>
+  :root{
+    --bg: #12151a; --panel: #1b1f26; --panel-2: #21262e; --line: #2b313b;
+    --text: #e8eaed; --muted: #8a909c; --amber: #f5a623; --amber-dim: #7a5716;
+    --green: #3ddc84; --green-dim: #1c5c3a; --red: #ff5c5c; --red-dim: #5c2323;
+    --mono: ui-monospace, "SF Mono", "Cascadia Code", "Roboto Mono", Consolas, monospace;
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;background:var(--bg);color:var(--text);font-family:var(--sans);}
+  body{min-height:100vh;display:flex;align-items:flex-start;justify-content:center;padding:32px 16px 64px;}
+  .kiosk{width:100%;max-width:980px;}
+  .kiosk-header{display:flex;align-items:baseline;justify-content:space-between;gap:16px;margin-bottom:16px;flex-wrap:wrap;}
+  .kiosk-header h1{font-size:20px;font-weight:600;margin:0;letter-spacing:0.2px;}
+  .kiosk-header .sub{color:var(--muted);font-size:13px;margin-top:4px;}
+  .status-pill{font-family:var(--mono);font-size:12px;padding:6px 12px;border-radius:100px;border:1px solid var(--line);white-space:nowrap;}
+  .status-pill.idle{color:var(--muted);}
+  .status-pill.busy{color:var(--amber);border-color:var(--amber-dim);background:rgba(245,166,35,0.08);}
+  .status-pill.ok{color:var(--green);border-color:var(--green-dim);background:rgba(61,220,132,0.08);}
+  .status-pill.warn{color:var(--amber);border-color:var(--amber-dim);background:rgba(245,166,35,0.08);}
+  .status-pill.err{color:var(--red);border-color:var(--red-dim);background:rgba(255,92,92,0.08);}
+  .session-banner{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:12px 16px;margin-bottom:16px;font-family:var(--mono);font-size:13px;color:var(--muted);}
+  .grid{display:grid;grid-template-columns:1.3fr 1fr;gap:16px;}
+  @media (max-width: 760px){ .grid{grid-template-columns:1fr;} }
+  .panel{background:var(--panel);border:1px solid var(--line);border-radius:12px;overflow:hidden;}
+  .cam-wrap{position:relative;aspect-ratio:4/3;background:#000;display:flex;align-items:center;justify-content:center;}
+  #reader{width:100%;height:100%;}
+  #reader video{width:100% !important;height:100% !important;object-fit:cover;}
+  .cam-placeholder{color:var(--muted);font-size:14px;text-align:center;padding:24px;}
+  .cam-overlay{position:absolute;inset:0;pointer-events:none;display:flex;align-items:center;justify-content:center;}
+  .reticle{width:46%;height:60%;border-radius:50%;border:2px solid var(--green);box-shadow:0 0 0 2000px rgba(0,0,0,0.35);}
+  .reticle.hidden{display:none;}
+  .cam-caption{position:absolute;left:0;right:0;bottom:0;padding:10px 14px;font-family:var(--mono);font-size:12px;color:#fff;background:linear-gradient(transparent,rgba(0,0,0,0.75));}
+  .controls{padding:14px 16px;border-top:1px solid var(--line);display:flex;gap:10px;flex-wrap:wrap;}
+  button{font-family:var(--sans);font-size:14px;font-weight:600;padding:10px 16px;border-radius:8px;border:1px solid var(--line);background:var(--panel-2);color:var(--text);cursor:pointer;}
+  button:hover{border-color:#3a4150;}
+  button.primary{background:var(--amber);border-color:var(--amber);color:#1a1200;}
+  button.primary:hover{filter:brightness(1.05);}
+  button:disabled{opacity:0.4;cursor:not-allowed;}
+  .steps{display:flex;flex-direction:column;gap:10px;padding:16px;}
+  .step{display:flex;gap:12px;padding:12px;border:1px solid var(--line);border-radius:10px;background:var(--panel-2);}
+  .step .dot{flex:0 0 auto;width:26px;height:26px;border-radius:50%;border:2px solid var(--line);display:flex;align-items:center;justify-content:center;font-family:var(--mono);font-size:14px;color:var(--muted);}
+  .step.active .dot{border-color:var(--amber);color:var(--amber);}
+  .step.done .dot{border-color:var(--green);background:var(--green);color:#062;}
+  .step.fail .dot{border-color:var(--red);color:var(--red);}
+  .step .body{flex:1;}
+  .step .label{font-size:13px;font-weight:600;}
+  .step .detail{font-family:var(--mono);font-size:12px;color:var(--muted);margin-top:3px;}
+  .roster-mini{padding:0 16px 16px;font-family:var(--mono);font-size:11.5px;color:var(--muted);}
+  .result{margin:0 16px 16px;padding:16px;border-radius:10px;border:1px solid var(--line);text-align:center;background:var(--panel-2);}
+  .result.hidden{display:none;}
+  .result h2{margin:0 0 4px;font-size:18px;}
+  .result p{margin:0;font-family:var(--mono);font-size:12px;color:var(--muted);}
+  .result.present{border-color:var(--green-dim);background:rgba(61,220,132,0.08);}
+  .result.present h2{color:var(--green);}
+  .result.late{border-color:var(--amber-dim);background:rgba(245,166,35,0.08);}
+  .result.late h2{color:var(--amber);}
+  .result.error{border-color:var(--red-dim);background:rgba(255,92,92,0.08);}
+  .result.error h2{color:var(--red);}
+  .log{margin-top:16px;padding:12px 14px;background:#0e1116;border:1px solid var(--line);border-radius:10px;font-family:var(--mono);font-size:12px;line-height:1.6;color:#a7b0bd;max-height:180px;overflow-y:auto;}
+  .log .t{color:#576073;}
+  .log .match{color:var(--green);}
+  .log .late{color:var(--amber);}
+  .log .miss{color:var(--red);}
+  .note{margin-top:14px;font-size:12.5px;color:var(--muted);line-height:1.6;}
+  .note code{background:var(--panel-2);border:1px solid var(--line);border-radius:4px;padding:1px 6px;font-family:var(--mono);}
+
+  .gate{position:fixed;inset:0;background:var(--bg);display:flex;align-items:center;justify-content:center;z-index:50;}
+  .gate.hidden{display:none;}
+  .gate-box{width:100%;max-width:340px;padding:0 20px;text-align:center;}
+  .gate-box h2{font-size:18px;margin:0 0 6px;}
+  .gate-box p{color:var(--muted);font-size:13px;margin:0 0 18px;}
+  .gate-box input{width:100%;padding:12px;border-radius:8px;border:1px solid var(--line);background:var(--panel-2);color:var(--text);font-size:16px;text-align:center;letter-spacing:2px;font-family:var(--mono);}
+  .gate-box button{width:100%;margin-top:12px;}
+  .gate-box .err{color:var(--red);font-size:12.5px;margin-top:10px;display:none;}
+</style>
+</head>
+<body>
+
+<div class="gate" id="gate">
+  <div class="gate-box">
+    <h2>Scanner Locked</h2>
+    <p>Enter today's passcode to open the camera check-in.</p>
+    <input type="text" id="gateInput" placeholder="Passcode" autocomplete="off" />
+    <button class="primary" id="gateBtn">Unlock</button>
+    <div class="err" id="gateErr">Incorrect passcode — try again.</div>
+  </div>
+</div>
+
+<div class="kiosk">
+
+  <div class="kiosk-header">
+    <div>
+      <h1>Scanner Station</h1>
+      <div class="sub">Face verification — matches against everyone enrolled</div>
+    </div>
+    <div class="status-pill idle" id="statusPill">idle</div>
+  </div>
+
+  <div class="session-banner" id="sessionBanner">Checking session status…</div>
+
+  <div class="grid">
+    <div class="panel">
+      <div class="cam-wrap">
+        <div id="reader"></div>
+        <div class="cam-placeholder" id="camPlaceholder">Camera is off.<br>Waiting for the session to open.</div>
+        <div class="cam-overlay"><div class="reticle hidden" id="reticle"></div></div>
+        <div class="cam-caption" id="camCaption" style="display:none;"></div>
+      </div>
+      <div class="controls">
+        <button class="primary" id="startBtn" disabled>Start Verification</button>
+        <button id="resetBtn" disabled>Run Again</button>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="steps">
+        <div class="step" id="step2">
+          <div class="dot">●</div>
+          <div class="body">
+            <div class="label">Match live face against enrolled roster</div>
+            <div class="detail" id="step2Detail">Waiting on session…</div>
+          </div>
+        </div>
+      </div>
+      <div class="roster-mini" id="rosterMini">Loading roster…</div>
+      <div class="result hidden" id="result">
+        <h2 id="resultTitle">Verified</h2>
+        <p id="resultDetail"></p>
+      </div>
+    </div>
+  </div>
+
+  <div class="log" id="log"></div>
+
+  <div class="note">
+    Camera access needs HTTPS (or localhost) — a proper deployed link satisfies this
+    automatically. New people show up here as soon as they're added on the
+    <code>/enroll</code> page — no code changes needed.
+  </div>
+
+</div>
+
+<script src="js/face-api.min.js"></script>
+<script>
+(function(){
+
+  const FACE_MATCH_THRESHOLD = 0.6;
+  const CONSECUTIVE_MATCHES_NEEDED = 3;
+
+  let ROSTER = [];
+
+  // ---- passcode gate ----
+  const gate = document.getElementById('gate');
+  const gateInput = document.getElementById('gateInput');
+  const gateBtn = document.getElementById('gateBtn');
+  const gateErr = document.getElementById('gateErr');
+
+  async function checkGateNeeded(){
+    const state = await (await fetch('/api/state', { cache: 'no-store' })).json();
+    if(!state.passcodeSet){
+      gate.classList.add('hidden');
+    }
+  }
+  gateBtn.addEventListener('click', async () => {
+    const res = await fetch('/api/verify-passcode', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ passcode: gateInput.value })
+    });
+    const data = await res.json();
+    if(data.ok){ gate.classList.add('hidden'); }
+    else { gateErr.style.display = 'block'; }
+  });
+  gateInput.addEventListener('keydown', e => { if(e.key === 'Enter') gateBtn.click(); });
+  checkGateNeeded();
+
+  const statusPill = document.getElementById('statusPill');
+  const sessionBanner = document.getElementById('sessionBanner');
+  const startBtn = document.getElementById('startBtn');
+  const resetBtn = document.getElementById('resetBtn');
+  const camPlaceholder = document.getElementById('camPlaceholder');
+  const reticle = document.getElementById('reticle');
+  const camCaption = document.getElementById('camCaption');
+  const step2 = document.getElementById('step2');
+  const step2Detail = document.getElementById('step2Detail');
+  const rosterMini = document.getElementById('rosterMini');
+  const resultBox = document.getElementById('result');
+  const resultTitle = document.getElementById('resultTitle');
+  const resultDetail = document.getElementById('resultDetail');
+  const logEl = document.getElementById('log');
+
+  let videoEl = null;
+  let mediaStream = null;
+  let modelsLoaded = false;
+  let phase = 'idle';
+  let lastCandidateId = null;
+  let consecutiveMatches = 0;
+  let faceLoopBusy = false;
+  let faceLoopTimer = null;
+  let latestSessionState = null;
+  let alreadyCheckedInThisRun = false;
+
+  function log(msg, cls){
+    const line = document.createElement('div');
+    const time = new Date().toLocaleTimeString();
+    line.innerHTML = `<span class="t">[${time}]</span> ` + (cls ? `<span class="${cls}">${msg}</span>` : msg);
+    logEl.appendChild(line);
+    logEl.scrollTop = logEl.scrollHeight;
+  }
+  function setStatus(text, kind){
+    statusPill.textContent = text;
+    statusPill.className = 'status-pill ' + (kind || 'idle');
+  }
+  function setStep(el, detailEl, state, text){
+    el.classList.remove('active','done','fail');
+    if(state) el.classList.add(state);
+    if(text) detailEl.textContent = text;
+  }
+  function formatDuration(ms){
+    const totalSec = Math.max(0, Math.floor(ms / 1000));
+    const m = Math.floor(totalSec / 60);
+    const s = totalSec % 60;
+    return `${m}:${s.toString().padStart(2,'0')}`;
+  }
+
+  async function pollSession(){
+    try{
+      const res = await fetch('/api/state', { cache: 'no-store' });
+      const state = await res.json();
+      latestSessionState = state;
+      if(!state.sessionActive){
+        sessionBanner.textContent = state.sessionStart
+          ? 'Session ended — ask your teacher to start a new one.'
+          : 'Waiting for the teacher to start the session…';
+        startBtn.disabled = true;
+      } else {
+        const elapsed = state.now - state.sessionStart;
+        const remaining = state.windowMs - elapsed;
+        sessionBanner.textContent = remaining > 0
+          ? `Session open — ${formatDuration(remaining)} until the late window.`
+          : `Session open (late window) — opened ${formatDuration(-remaining)} ago.`;
+        if(phase === 'idle') startBtn.disabled = false;
+      }
+    } catch(err){
+      sessionBanner.textContent = 'Could not reach the server.';
+    }
+  }
+
+  async function ensureModelsLoaded(){
+    if(modelsLoaded) return;
+    setStatus('loading models…', 'busy');
+    log('Loading face recognition models from ./models …');
+    await faceapi.nets.tinyFaceDetector.loadFromUri('models');
+    await faceapi.nets.faceLandmark68Net.loadFromUri('models');
+    await faceapi.nets.faceRecognitionNet.loadFromUri('models');
+    log('Models loaded.', 'match');
+
+    const state = await (await fetch('/api/state', { cache: 'no-store' })).json();
+    ROSTER = state.roster.map(r => ({ id: r.id, name: r.name, photo: r.photo, descriptor: null }));
+
+    for(const student of ROSTER){
+      try{
+        const img = await faceapi.fetchImage(student.photo);
+        const detection = await faceapi.detectSingleFace(img, new faceapi.TinyFaceDetectorOptions())
+          .withFaceLandmarks().withFaceDescriptor();
+        if(!detection){
+          log(`No face found in the reference photo for ${student.name} — they won't be recognized.`, 'miss');
+          continue;
+        }
+        student.descriptor = detection.descriptor;
+        log(`Enrolled reference face for ${student.name}.`, 'match');
+      } catch(err){
+        log(`Could not load reference photo for ${student.name}: ${err.message}`, 'miss');
+      }
+    }
+    rosterMini.textContent = 'Enrolled: ' + ROSTER.filter(s => s.descriptor).map(s => s.name).join(', ');
+    modelsLoaded = true;
+  }
+
+  async function ensureCameraRunning(){
+    if(mediaStream) return;
+    mediaStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" } });
+    videoEl = document.createElement('video');
+    videoEl.autoplay = true;
+    videoEl.playsInline = true;
+    videoEl.muted = true;
+    videoEl.srcObject = mediaStream;
+    document.getElementById('reader').appendChild(videoEl);
+    await videoEl.play();
+    camPlaceholder.style.display = 'none';
+  }
+
+  function enterFacePhase(){
+    phase = 'scan_face';
+    lastCandidateId = null;
+    consecutiveMatches = 0;
+    alreadyCheckedInThisRun = false;
+    setStatus('matching face…', 'busy');
+    setStep(step2, step2Detail, 'active', 'Look at the camera…');
+    reticle.classList.remove('hidden');
+    camCaption.style.display = 'block';
+    camCaption.textContent = 'Hold still — matching your face…';
+    faceLoopTimer = setInterval(runFaceCheck, 450);
+  }
+
+  async function runFaceCheck(){
+    if(faceLoopBusy || phase !== 'scan_face' || !videoEl) return;
+    faceLoopBusy = true;
+    try{
+      const detection = await faceapi.detectSingleFace(videoEl, new faceapi.TinyFaceDetectorOptions())
+        .withFaceLandmarks().withFaceDescriptor();
+      if(!detection){
+        step2Detail.textContent = 'No face detected — face the camera.';
+        lastCandidateId = null; consecutiveMatches = 0;
+        faceLoopBusy = false;
+        return;
+      }
+      let best = null, bestDist = Infinity;
+      for(const student of ROSTER){
+        if(!student.descriptor) continue;
+        const d = faceapi.euclideanDistance(detection.descriptor, student.descriptor);
+        if(d < bestDist){ bestDist = d; best = student; }
+      }
+      if(!best || bestDist >= FACE_MATCH_THRESHOLD){
+        step2Detail.textContent = best
+          ? `Closest match ${best.name} at ${bestDist.toFixed(3)} — not close enough.`
+          : 'No enrolled faces to compare against.';
+        lastCandidateId = null; consecutiveMatches = 0;
+        faceLoopBusy = false;
+        return;
+      }
+      if(best.id === lastCandidateId){ consecutiveMatches++; }
+      else { lastCandidateId = best.id; consecutiveMatches = 1; }
+      step2Detail.textContent = `${best.name} — distance ${bestDist.toFixed(3)} — ${consecutiveMatches}/${CONSECUTIVE_MATCHES_NEEDED} confirmed frames`;
+      log(`Best match: ${best.name} @ ${bestDist.toFixed(3)}.`, 'match');
+
+      if(consecutiveMatches >= CONSECUTIVE_MATCHES_NEEDED && !alreadyCheckedInThisRun){
+        alreadyCheckedInThisRun = true;
+        clearInterval(faceLoopTimer);
+        await submitCheckin(best);
+      }
+    } catch(err){
+      log('Face check error: ' + err.message, 'miss');
+    }
+    faceLoopBusy = false;
+  }
+
+  async function submitCheckin(student){
+    try{
+      const res = await fetch('/api/checkin', {
+        method: 'POST', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ studentId: student.id })
+      });
+      const data = await res.json();
+      if(!res.ok){ onError(data.error || 'Check-in was rejected by the server.'); return; }
+      onVerified(student, data.status, data.elapsedMs);
+    } catch(err){
+      onError('Could not reach the server to record this check-in.');
+    }
+  }
+
+  function onVerified(student, status, elapsedMs){
+    phase = 'verified';
+    const isLate = status === 'Late';
+    setStatus(status.toLowerCase(), isLate ? 'warn' : 'ok');
+    setStep(step2, step2Detail, 'done', `Matched ${student.name}.`);
+    camCaption.textContent = `${status.toUpperCase()} ✓`;
+    reticle.classList.add('hidden');
+    resultBox.classList.remove('hidden', 'present', 'late', 'error');
+    resultBox.classList.add(isLate ? 'late' : 'present');
+    resultTitle.textContent = `${status.toUpperCase()} — ${student.name}`;
+    resultDetail.textContent = `${student.id} · checked in ${formatDuration(elapsedMs)} after session start · ${new Date().toLocaleTimeString()}`;
+    log(`RESULT: ${student.name} — ${status} (checked in at ${formatDuration(elapsedMs)}).`, isLate ? 'late' : 'match');
+    resetBtn.disabled = false;
+  }
+
+  function onError(message){
+    phase = 'idle';
+    setStatus('error', 'err');
+    setStep(step2, step2Detail, 'fail', message);
+    resultBox.classList.remove('hidden', 'present', 'late');
+    resultBox.classList.add('error');
+    resultTitle.textContent = 'Not recorded';
+    resultDetail.textContent = message;
+    log('Check-in error: ' + message, 'miss');
+    resetBtn.disabled = false;
+  }
+
+  startBtn.addEventListener('click', async () => {
+    startBtn.disabled = true;
+    try{
+      await ensureModelsLoaded();
+      setStatus('starting camera…', 'busy');
+      await ensureCameraRunning();
+      enterFacePhase();
+    } catch(err){
+      setStatus('error', 'err');
+      log('Startup error: ' + err.message, 'miss');
+      camPlaceholder.textContent = 'Could not start: ' + err.message;
+      camPlaceholder.style.display = 'block';
+      startBtn.disabled = false;
+    }
+  });
+
+  resetBtn.addEventListener('click', () => {
+    clearInterval(faceLoopTimer);
+    resultBox.classList.add('hidden');
+    resultBox.classList.remove('present', 'late', 'error');
+    resetBtn.disabled = true;
+    setStep(step2, step2Detail, null, 'Press "Start Verification" to check in again.');
+    setStatus('idle', 'idle');
+    camCaption.textContent = '';
+    reticle.classList.add('hidden');
+    phase = 'idle';
+    if(latestSessionState && latestSessionState.sessionActive) startBtn.disabled = false;
+  });
+
+  pollSession();
+  setInterval(pollSession, 1000);
+})();
+</script>
+</body>
+</html>

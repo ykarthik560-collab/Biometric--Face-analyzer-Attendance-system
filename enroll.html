@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Enroll a Person — Attendance System</title>
+<style>
+  :root{
+    --bg: #12151a; --panel: #1b1f26; --panel-2: #21262e; --line: #2b313b;
+    --text: #e8eaed; --muted: #8a909c; --amber: #f5a623; --amber-dim: #7a5716;
+    --green: #3ddc84; --green-dim: #1c5c3a; --red: #ff5c5c; --red-dim: #5c2323;
+    --mono: ui-monospace, "SF Mono", "Cascadia Code", "Roboto Mono", Consolas, monospace;
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;background:var(--bg);color:var(--text);font-family:var(--sans);}
+  body{min-height:100vh;display:flex;justify-content:center;padding:32px 16px 64px;}
+  .wrap{width:100%;max-width:520px;}
+  h1{font-size:20px;font-weight:600;margin:0 0 4px;}
+  .sub{color:var(--muted);font-size:13px;margin-bottom:24px;}
+  .panel{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:22px;}
+  label{display:block;font-size:12.5px;color:var(--muted);margin-bottom:6px;margin-top:18px;}
+  label:first-of-type{margin-top:0;}
+  input[type="text"]{
+    width:100%;padding:10px 12px;border-radius:8px;border:1px solid var(--line);
+    background:var(--panel-2);color:var(--text);font-size:14px;font-family:var(--sans);
+  }
+  .drop{
+    border:1.5px dashed var(--line);border-radius:10px;padding:22px;text-align:center;
+    color:var(--muted);font-size:13px;cursor:pointer;background:var(--panel-2);
+  }
+  .drop.has-file{border-color:var(--green);color:var(--text);}
+  #photoInput{display:none;}
+  #preview{max-width:100%;max-height:180px;border-radius:8px;margin-top:10px;display:none;}
+  button{
+    width:100%;margin-top:22px;font-family:var(--sans);font-size:14.5px;font-weight:600;
+    padding:12px;border-radius:8px;border:1px solid var(--amber);background:var(--amber);
+    color:#1a1200;cursor:pointer;
+  }
+  button:disabled{opacity:0.4;cursor:not-allowed;}
+  .msg{margin-top:16px;padding:12px 14px;border-radius:8px;font-size:13px;display:none;}
+  .msg.ok{display:block;background:rgba(61,220,132,0.08);border:1px solid var(--green-dim);color:var(--green);}
+  .msg.err{display:block;background:rgba(255,92,92,0.08);border:1px solid var(--red-dim);color:var(--red);}
+  .links{margin-top:20px;display:flex;gap:14px;font-size:12.5px;}
+  .links a{color:var(--muted);text-decoration:none;border-bottom:1px dotted var(--line);}
+  .links a:hover{color:var(--amber);}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Enroll a Person</h1>
+  <div class="sub">Add someone new to the roster — one clear, front-facing photo and their name.</div>
+
+  <div class="panel">
+    <label>Full name</label>
+    <input type="text" id="nameInput" placeholder="e.g. Aastha Singh" />
+
+    <label>Photo</label>
+    <div class="drop" id="dropZone">
+      <span id="dropLabel">Tap to choose a photo</span>
+      <img id="preview" />
+    </div>
+    <input type="file" id="photoInput" accept="image/*" capture="user" />
+
+    <button id="submitBtn">Add to Roster</button>
+    <div class="msg" id="msg"></div>
+  </div>
+
+  <div class="links">
+    <a href="/scanner">Scanner</a>
+    <a href="/dashboard">Dashboard</a>
+    <a href="/portal">Portal</a>
+  </div>
+</div>
+
+<script>
+(function(){
+  const nameInput = document.getElementById('nameInput');
+  const dropZone = document.getElementById('dropZone');
+  const dropLabel = document.getElementById('dropLabel');
+  const photoInput = document.getElementById('photoInput');
+  const preview = document.getElementById('preview');
+  const submitBtn = document.getElementById('submitBtn');
+  const msg = document.getElementById('msg');
+
+  dropZone.addEventListener('click', () => photoInput.click());
+
+  photoInput.addEventListener('change', () => {
+    const file = photoInput.files[0];
+    if(!file) return;
+    dropZone.classList.add('has-file');
+    dropLabel.textContent = file.name;
+    const reader = new FileReader();
+    reader.onload = e => { preview.src = e.target.result; preview.style.display = 'block'; };
+    reader.readAsDataURL(file);
+  });
+
+  submitBtn.addEventListener('click', async () => {
+    msg.className = 'msg';
+    const name = nameInput.value.trim();
+    const file = photoInput.files[0];
+    if(!name){ msg.textContent = 'Enter a name first.'; msg.className = 'msg err'; return; }
+    if(!file){ msg.textContent = 'Choose a photo first.'; msg.className = 'msg err'; return; }
+
+    submitBtn.disabled = true;
+    submitBtn.textContent = 'Adding…';
+
+    const formData = new FormData();
+    formData.append('name', name);
+    formData.append('photo', file);
+
+    try{
+      const res = await fetch('/api/enroll', { method: 'POST', body: formData });
+      const data = await res.json();
+      if(!res.ok){
+        msg.textContent = data.error || 'Something went wrong.';
+        msg.className = 'msg err';
+      } else {
+        msg.textContent = `${data.name} added to the roster. They'll be recognized on the scanner next time it loads.`;
+        msg.className = 'msg ok';
+        nameInput.value = '';
+        photoInput.value = '';
+        preview.style.display = 'none';
+        dropZone.classList.remove('has-file');
+        dropLabel.textContent = 'Tap to choose a photo';
+      }
+    } catch(err){
+      msg.textContent = 'Could not reach the server.';
+      msg.className = 'msg err';
+    }
+    submitBtn.disabled = false;
+    submitBtn.textContent = 'Add to Roster';
+  });
+})();
+</script>
+</body>
+</html>
