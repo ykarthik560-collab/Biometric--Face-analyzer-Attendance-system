@@ -1,0 +1,289 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Teacher Dashboard — Attendance</title>
+<style>
+  :root{
+    --bg: #12151a;
+    --panel: #1b1f26;
+    --panel-2: #21262e;
+    --line: #2b313b;
+    --text: #e8eaed;
+    --muted: #8a909c;
+    --amber: #f5a623;
+    --amber-dim: #7a5716;
+    --green: #3ddc84;
+    --green-dim: #1c5c3a;
+    --red: #ff5c5c;
+    --red-dim: #5c2323;
+    --mono: ui-monospace, "SF Mono", "Cascadia Code", "Roboto Mono", Consolas, monospace;
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;background:var(--bg);color:var(--text);font-family:var(--sans);}
+  body{min-height:100vh;display:flex;justify-content:center;padding:32px 16px 64px;}
+  .wrap{width:100%;max-width:920px;}
+
+  .header{display:flex;align-items:baseline;justify-content:space-between;gap:16px;margin-bottom:16px;flex-wrap:wrap;}
+  .header h1{font-size:20px;font-weight:600;margin:0;}
+  .header .sub{color:var(--muted);font-size:13px;margin-top:4px;}
+  .status-pill{font-family:var(--mono);font-size:12px;padding:6px 12px;border-radius:100px;border:1px solid var(--line);white-space:nowrap;}
+  .status-pill.live{color:var(--green);border-color:var(--green-dim);background:rgba(61,220,132,0.08);}
+  .status-pill.off{color:var(--muted);}
+
+  .panel{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:16px;margin-bottom:16px;}
+
+  .session-row{display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;}
+  .session-left{display:flex;flex-direction:column;gap:2px;}
+  .session-label{font-size:11px;text-transform:uppercase;letter-spacing:0.6px;color:var(--muted);}
+  .session-value{font-family:var(--mono);font-size:16px;font-weight:600;}
+  .session-right{display:flex;align-items:center;gap:12px;flex-wrap:wrap;}
+  .test-toggle{display:flex;align-items:center;gap:6px;font-size:12.5px;color:var(--muted);cursor:pointer;}
+  .test-toggle input{accent-color:var(--amber);}
+
+  button{font-family:var(--sans);font-size:14px;font-weight:600;padding:10px 16px;border-radius:8px;border:1px solid var(--line);background:var(--panel-2);color:var(--text);cursor:pointer;}
+  button:hover{border-color:#3a4150;}
+  button.primary{background:var(--amber);border-color:var(--amber);color:#1a1200;}
+  button.stop{background:var(--red);border-color:var(--red);color:#2a0d0d;}
+  button:disabled{opacity:0.35;cursor:not-allowed;}
+
+  .counts{display:flex;gap:10px;margin-bottom:16px;flex-wrap:wrap;}
+  .count-card{flex:1;min-width:110px;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:12px 14px;}
+  .count-card .n{font-family:var(--mono);font-size:22px;font-weight:700;}
+  .count-card .l{font-size:11.5px;color:var(--muted);text-transform:uppercase;letter-spacing:0.5px;margin-top:2px;}
+  .count-card.present .n{color:var(--green);}
+  .count-card.late .n{color:var(--amber);}
+  .count-card.absent .n{color:var(--red);}
+  .count-card.pending .n{color:var(--muted);}
+
+  table{width:100%;border-collapse:collapse;}
+  thead th{text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:0.5px;color:var(--muted);padding:8px 10px;border-bottom:1px solid var(--line);}
+  tbody td{padding:10px;border-bottom:1px solid var(--line);font-size:14px;}
+  tbody tr:last-child td{border-bottom:none;}
+  .badge{display:inline-block;padding:3px 10px;border-radius:100px;font-family:var(--mono);font-size:11.5px;}
+  .badge.present{color:var(--green);background:rgba(61,220,132,0.1);border:1px solid var(--green-dim);}
+  .badge.late{color:var(--amber);background:rgba(245,166,35,0.1);border:1px solid var(--amber-dim);}
+  .badge.absent{color:var(--red);background:rgba(255,92,92,0.1);border:1px solid var(--red-dim);}
+  .badge.pending{color:var(--muted);background:rgba(138,144,156,0.08);border:1px solid var(--line);}
+  .time-cell{font-family:var(--mono);color:var(--muted);font-size:12.5px;}
+
+  .footer-row{display:flex;justify-content:flex-end;margin-top:14px;}
+  .footer-row a{color:var(--muted);font-size:12.5px;text-decoration:none;border:1px solid var(--line);padding:8px 14px;border-radius:8px;}
+  .footer-row a:hover{border-color:#3a4150;color:var(--text);}
+
+  .note{margin-top:14px;font-size:12.5px;color:var(--muted);line-height:1.6;}
+  .note code{background:var(--panel-2);border:1px solid var(--line);border-radius:4px;padding:1px 6px;font-family:var(--mono);}
+</style>
+</head>
+<body>
+
+<div class="wrap">
+
+  <div class="header">
+    <div>
+      <h1>Teacher Dashboard</h1>
+      <div class="sub">Live attendance — updates automatically, no refresh needed</div>
+    </div>
+    <div class="status-pill off" id="livePill">not connected</div>
+  </div>
+
+  <div class="panel">
+    <div class="session-row">
+      <div class="session-left">
+        <div class="session-label">Session</div>
+        <div class="session-value" id="sessionValue">Loading…</div>
+      </div>
+      <div class="session-right">
+        <label class="test-toggle">
+          <input type="checkbox" id="demoModeToggle" />
+          Quick demo mode (20s window)
+        </label>
+        <button class="primary" id="startBtn">Start Session</button>
+        <button class="stop" id="endBtn" disabled>End Session</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="session-row">
+      <div class="session-left">
+        <div class="session-label">Scanner Passcode</div>
+        <div class="session-value" id="passcodeStatus" style="font-size:14px;">Loading…</div>
+      </div>
+      <div class="session-right">
+        <input type="text" id="passcodeInput" placeholder="e.g. 4471" style="padding:9px 12px;border-radius:8px;border:1px solid var(--line);background:var(--panel-2);color:var(--text);font-family:var(--mono);width:120px;" />
+        <button id="setPasscodeBtn">Set</button>
+        <button id="clearPasscodeBtn">Clear (open link)</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="counts">
+    <div class="count-card present"><div class="n" id="cPresent">0</div><div class="l">Present</div></div>
+    <div class="count-card late"><div class="n" id="cLate">0</div><div class="l">Late</div></div>
+    <div class="count-card absent"><div class="n" id="cAbsent">0</div><div class="l">Absent</div></div>
+    <div class="count-card pending"><div class="n" id="cPending">0</div><div class="l">Not checked in</div></div>
+  </div>
+
+  <div class="panel">
+    <table>
+      <thead>
+        <tr><th>Name</th><th>Student ID</th><th>Status</th><th>Time</th></tr>
+      </thead>
+      <tbody id="rosterBody">
+        <tr><td colspan="4" style="color:var(--muted);">Loading roster…</td></tr>
+      </tbody>
+    </table>
+    <div class="footer-row">
+      <a href="/api/export.csv">Export CSV ↓</a>
+    </div>
+  </div>
+
+  <div class="note">
+    This page polls the server about once a second — that's the "live notification" for now.
+    Keep this tab open during class.
+  </div>
+  <div style="margin-top:16px;display:flex;gap:14px;font-size:12.5px;">
+    <a href="/scanner" style="color:var(--muted);text-decoration:none;border-bottom:1px dotted var(--line);">Scanner</a>
+    <a href="/portal" style="color:var(--muted);text-decoration:none;border-bottom:1px dotted var(--line);">Portal</a>
+    <a href="/enroll" style="color:var(--muted);text-decoration:none;border-bottom:1px dotted var(--line);">Enroll a Person</a>
+  </div>
+
+</div>
+
+<script>
+(function(){
+  const livePill      = document.getElementById('livePill');
+  const sessionValue   = document.getElementById('sessionValue');
+  const demoModeToggle  = document.getElementById('demoModeToggle');
+  const startBtn         = document.getElementById('startBtn');
+  const endBtn             = document.getElementById('endBtn');
+  const rosterBody           = document.getElementById('rosterBody');
+  const cPresent               = document.getElementById('cPresent');
+  const cLate                   = document.getElementById('cLate');
+  const cAbsent                   = document.getElementById('cAbsent');
+  const cPending                    = document.getElementById('cPending');
+  const passcodeStatus                = document.getElementById('passcodeStatus');
+  const passcodeInput                  = document.getElementById('passcodeInput');
+  const setPasscodeBtn                  = document.getElementById('setPasscodeBtn');
+  const clearPasscodeBtn                 = document.getElementById('clearPasscodeBtn');
+
+  function formatDuration(ms){
+    const totalSec = Math.max(0, Math.floor(ms/1000));
+    const m = Math.floor(totalSec/60);
+    const s = totalSec % 60;
+    return `${m}:${s.toString().padStart(2,'0')}`;
+  }
+
+  function badgeClass(status){
+    if(status === 'Present') return 'present';
+    if(status === 'Late') return 'late';
+    if(status === 'Absent') return 'absent';
+    return 'pending';
+  }
+
+  function render(state){
+    livePill.textContent = 'live';
+    livePill.className = 'status-pill live';
+
+    if(!state.sessionActive && !state.sessionStart){
+      sessionValue.textContent = 'Not started';
+      sessionValue.style.color = 'var(--muted)';
+      startBtn.disabled = false;
+      endBtn.disabled = true;
+    } else if(state.sessionActive){
+      const elapsed = state.now - state.sessionStart;
+      const remaining = state.windowMs - elapsed;
+      if(remaining > 0){
+        sessionValue.textContent = `Open — ${formatDuration(remaining)} until late window`;
+        sessionValue.style.color = 'var(--green)';
+      } else {
+        sessionValue.textContent = `Late window — opened ${formatDuration(-remaining)} ago`;
+        sessionValue.style.color = 'var(--amber)';
+      }
+      startBtn.disabled = true;
+      endBtn.disabled = false;
+    } else {
+      sessionValue.textContent = 'Ended';
+      sessionValue.style.color = 'var(--muted)';
+      startBtn.disabled = false;
+      endBtn.disabled = true;
+    }
+
+    passcodeStatus.textContent = state.passcodeSet ? 'Set — scanner requires it' : 'Not set — scanner link is open to anyone';
+    passcodeStatus.style.color = state.passcodeSet ? 'var(--green)' : 'var(--muted)';
+
+    cPresent.textContent = state.counts['Present'] || 0;
+    cLate.textContent = state.counts['Late'] || 0;
+    cAbsent.textContent = state.counts['Absent'] || 0;
+    cPending.textContent = state.counts['Not checked in'] || 0;
+
+    rosterBody.innerHTML = '';
+    state.roster.forEach(r => {
+      const tr = document.createElement('tr');
+      const timeStr = r.timestamp ? new Date(r.timestamp).toLocaleTimeString() : '—';
+      tr.innerHTML = `
+        <td>${r.name}</td>
+        <td class="time-cell">${r.id}</td>
+        <td><span class="badge ${badgeClass(r.status)}">${r.status}</span></td>
+        <td class="time-cell">${timeStr}</td>
+      `;
+      rosterBody.appendChild(tr);
+    });
+  }
+
+  async function poll(){
+    try{
+      const res = await fetch('/api/state', { cache: 'no-store' });
+      const state = await res.json();
+      render(state);
+    } catch(err){
+      livePill.textContent = 'disconnected';
+      livePill.className = 'status-pill off';
+    }
+  }
+
+  startBtn.addEventListener('click', async () => {
+    const windowMs = demoModeToggle.checked ? 20 * 1000 : 20 * 60 * 1000;
+    startBtn.disabled = true;
+    await fetch('/api/session/start', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ windowMs })
+    });
+    poll();
+  });
+
+  endBtn.addEventListener('click', async () => {
+    endBtn.disabled = true;
+    await fetch('/api/session/end', { method: 'POST' });
+    poll();
+  });
+
+  setPasscodeBtn.addEventListener('click', async () => {
+    const code = passcodeInput.value.trim();
+    if(!code) return;
+    await fetch('/api/passcode', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ passcode: code })
+    });
+    passcodeInput.value = '';
+    poll();
+  });
+
+  clearPasscodeBtn.addEventListener('click', async () => {
+    await fetch('/api/passcode', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ passcode: '' })
+    });
+    poll();
+  });
+
+  poll();
+  setInterval(poll, 1000);
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Attendance Portal</title>
+<style>
+  :root{
+    --bg: #12151a; --panel: #1b1f26; --panel-2: #21262e; --line: #2b313b;
+    --text: #e8eaed; --muted: #8a909c; --amber: #f5a623; --amber-dim: #7a5716;
+    --green: #3ddc84; --green-dim: #1c5c3a; --red: #ff5c5c; --red-dim: #5c2323;
+    --mono: ui-monospace, "SF Mono", "Cascadia Code", "Roboto Mono", Consolas, monospace;
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;background:var(--bg);color:var(--text);font-family:var(--sans);}
+  body{min-height:100vh;display:flex;justify-content:center;padding:32px 16px 64px;}
+  .wrap{width:100%;max-width:840px;}
+  .header{display:flex;align-items:baseline;justify-content:space-between;gap:16px;margin-bottom:6px;flex-wrap:wrap;}
+  .header h1{font-size:20px;font-weight:600;margin:0;}
+  .sub{color:var(--muted);font-size:13px;margin-bottom:22px;}
+  .panel{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:16px;margin-bottom:16px;}
+  table{width:100%;border-collapse:collapse;}
+  thead th{text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:0.5px;color:var(--muted);padding:8px 10px;border-bottom:1px solid var(--line);}
+  thead th.num, tbody td.num{text-align:right;}
+  tbody td{padding:12px 10px;border-bottom:1px solid var(--line);font-size:14px;}
+  tbody tr:last-child td{border-bottom:none;}
+  .pct{font-family:var(--mono);font-weight:700;font-size:15px;}
+  .pct.good{color:var(--green);}
+  .pct.bad{color:var(--red);}
+  .pct.none{color:var(--muted);font-weight:400;font-size:13px;}
+  .bar-track{width:100%;height:6px;border-radius:100px;background:var(--panel-2);overflow:hidden;margin-top:6px;}
+  .bar-fill{height:100%;border-radius:100px;}
+  .bar-fill.good{background:var(--green);}
+  .bar-fill.bad{background:var(--red);}
+  .note{margin-top:14px;font-size:12.5px;color:var(--muted);line-height:1.6;}
+  .note code{background:var(--panel-2);border:1px solid var(--line);border-radius:4px;padding:1px 6px;font-family:var(--mono);}
+</style>
+</head>
+<body>
+
+<div class="wrap">
+  <div class="header">
+    <h1>Attendance Portal</h1>
+  </div>
+  <div class="sub" id="subLine">Loading…</div>
+
+  <div class="panel">
+    <table>
+      <thead>
+        <tr><th>Name</th><th class="num">Sessions Attended</th><th class="num">Total Sessions</th><th class="num">Attendance %</th></tr>
+      </thead>
+      <tbody id="rows">
+        <tr><td colspan="4" style="color:var(--muted);">Loading…</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="note">
+    Attendance % is calculated only from sessions the teacher has actually <b>ended</b> on the
+    dashboard — the session currently in progress (if any) isn't counted until it's closed.
+    This shows everyone's numbers openly; there's no individual login on this prototype.
+  </div>
+  <div style="margin-top:16px;display:flex;gap:14px;font-size:12.5px;">
+    <a href="/scanner" style="color:var(--muted);text-decoration:none;border-bottom:1px dotted var(--line);">Scanner</a>
+    <a href="/dashboard" style="color:var(--muted);text-decoration:none;border-bottom:1px dotted var(--line);">Dashboard</a>
+    <a href="/enroll" style="color:var(--muted);text-decoration:none;border-bottom:1px dotted var(--line);">Enroll a Person</a>
+  </div>
+</div>
+
+<script>
+(function(){
+  const subLine = document.getElementById('subLine');
+  const rowsEl = document.getElementById('rows');
+
+  function pctClass(pct){
+    if(pct === null) return 'none';
+    return pct >= 75 ? 'good' : 'bad';
+  }
+
+  async function load(){
+    try{
+      const res = await fetch('/api/portal', { cache: 'no-store' });
+      const data = await res.json();
+
+      subLine.textContent = `${data.subject} · ${data.totalSessions} completed session${data.totalSessions === 1 ? '' : 's'} recorded so far`;
+
+      rowsEl.innerHTML = '';
+      data.rows.forEach(r => {
+        const tr = document.createElement('tr');
+        const pctLabel = r.pct === null ? 'No sessions yet' : `${r.pct}%`;
+        const cls = pctClass(r.pct);
+        const barWidth = r.pct === null ? 0 : r.pct;
+        tr.innerHTML = `
+          <td>${r.name}</td>
+          <td class="num">${r.attended}</td>
+          <td class="num">${r.total}</td>
+          <td class="num">
+            <span class="pct ${cls}">${pctLabel}</span>
+            <div class="bar-track"><div class="bar-fill ${cls === 'none' ? '' : cls}" style="width:${barWidth}%;"></div></div>
+          </td>
+        `;
+        rowsEl.appendChild(tr);
+      });
+    } catch(err){
+      subLine.textContent = 'Could not reach the server — is server.py still running?';
+    }
+  }
+
+  load();
+  setInterval(load, 3000);
+})();
+</script>
+</body>
+</html>

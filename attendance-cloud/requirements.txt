@@ -1,0 +1,2 @@
+# No external packages needed — server.py only uses Python's standard library.
+# This file exists so hosting platforms correctly detect this as a Python app.
